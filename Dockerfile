@@ -6,4 +6,4 @@ RUN curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tm
     && /tmp/aws/install \
     && rm -rf /tmp/awscliv2.zip /tmp/aws
 
-CMD ["xyrun", "bash"]
+CMD ["xyrun"]
