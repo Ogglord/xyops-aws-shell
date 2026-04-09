@@ -25,22 +25,21 @@ _aws_resilient_s3_sync() {
   err_file="$(mktemp /tmp/aws-s3-sync.XXXXXX.log)"
   trap 'rm -f "$err_file"' RETURN
   set +e
-  aws --endpoint-url "$E2_ENDPOINT" s3 sync "$@" 2> >(tee "$err_file" >&2)
+  aws --endpoint-url "$E2_ENDPOINT" s3 sync "$@" 2>"$err_file"
   rc=$?
+  cat "$err_file" >&2   # show stderr in logs
   set -e
   case "$rc" in
     0) return 0 ;;
     2)
-      if grep -qE 'Skipping file .* (character special device|block special device|FIFO|socket|File does not exist)' "$err_file"; then
+      if grep -qE 'Skipping file .+ (character special device|block special device|FIFO|socket|File does not exist)' "$err_file"; then
         echo "aws s3 sync returned 2 due to skipped special/transient files; treating as success" >&2
         return 0
       fi
-      tail -50 "$err_file" >&2 || true
       return 2
       ;;
     *)
       echo "aws s3 sync failed with exit code $rc" >&2
-      tail -50 "$err_file" >&2 || true
       return "$rc"
       ;;
   esac
