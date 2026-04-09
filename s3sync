@@ -1,0 +1,71 @@
+#!/bin/bash
+# Usage: s3sync <local_path> <s3_path> [extra aws s3 sync args...]
+# Requires: E2_ENDPOINT, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION
+set -euo pipefail
+
+LOCAL_PATH="${1:?Usage: s3sync <local_path> <s3_path> [extra args...]}"
+S3_PATH="${2:?Usage: s3sync <local_path> <s3_path> [extra args...]}"
+shift 2
+
+
+# Validate required environment variables
+missing=()
+[[ -z "${E2_ENDPOINT:-}"           ]] && missing+=("E2_ENDPOINT")
+[[ -z "${AWS_ACCESS_KEY_ID:-}"     ]] && missing+=("AWS_ACCESS_KEY_ID")
+[[ -z "${AWS_SECRET_ACCESS_KEY:-}" ]] && missing+=("AWS_SECRET_ACCESS_KEY")
+[[ -z "${AWS_DEFAULT_REGION:-}"    ]] && missing+=("AWS_DEFAULT_REGION")
+
+if [[ ${#missing[@]} -gt 0 ]]; then
+  echo "Error: Missing required environment variables: ${missing[*]}" >&2
+  exit 1
+fi
+
+_aws_resilient_s3_sync() {
+  local err_file rc
+  err_file="$(mktemp /tmp/aws-s3-sync.XXXXXX.log)"
+  trap 'rm -f "$err_file"' RETURN
+  set +e
+  aws --endpoint-url "$E2_ENDPOINT" s3 sync "$@" 2> >(tee "$err_file" >&2)
+  rc=$?
+  set -e
+  case "$rc" in
+    0) return 0 ;;
+    2)
+      if grep -qE 'Skipping file .* (character special device|block special device|FIFO|socket|File does not exist)' "$err_file"; then
+        echo "aws s3 sync returned 2 due to skipped special/transient files; treating as success" >&2
+        return 0
+      fi
+      tail -50 "$err_file" >&2 || true
+      return 2
+      ;;
+    *)
+      echo "aws s3 sync failed with exit code $rc" >&2
+      tail -50 "$err_file" >&2 || true
+      return "$rc"
+      ;;
+  esac
+}
+
+_aws_resilient_s3_sync "$LOCAL_PATH" "$S3_PATH" \
+  --delete --no-progress \
+  --exclude "*.pid" \
+  --exclude "*.lock" \
+  --exclude "*.log" \
+  --exclude "*/logs/*" \
+  --exclude "PostgreSQL/*" \
+  --exclude "*.db-shm" \
+  --exclude "*.db-wal" \
+  --exclude "*.sock" \
+  --exclude "*.socket" \
+  --exclude "*ipc-socket*" \
+  --exclude "*.fastresume" \
+  --exclude "*.journal" \
+  --exclude "lost+found/*" \
+  --exclude "previous/*" \
+  --exclude "System Volume Information/*" \
+  --exclude "\$RECYCLE.BIN/*" \
+  --exclude ".Spotlight-V100/*" \
+  --exclude ".fseventsd/*" \
+  --exclude ".Trashes/*" \
+  --exclude "logs/*" \
+  "$@"

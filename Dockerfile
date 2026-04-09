@@ -6,4 +6,7 @@ RUN curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tm
     && /tmp/aws/install \
     && rm -rf /tmp/awscliv2.zip /tmp/aws
 
+COPY s3sync /usr/local/bin/s3sync
+RUN chmod +x /usr/local/bin/s3sync
+
 CMD ["xyrun"]
